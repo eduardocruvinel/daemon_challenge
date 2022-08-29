@@ -2,7 +2,7 @@
 
 This is a simplified Python and SQLite stocks DB project.
 
-Libraries used: sqlite3, yfinance, yahoo_fin.
+Libraries used: sqlite3, yfinance, yahoo_fin, matplotlib (pyplot).
 
 Entity Relationship Diagram:
 
