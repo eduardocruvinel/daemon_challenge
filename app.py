@@ -2,13 +2,17 @@ import sqlite3
 import yfinance as yf
 from company import Company
 from stock_value import StockValue
+from yahoo_fin.stock_info import get_data
+from matplotlib import pyplot as plt
+
+# Initially, let's open a new Database Connection
 
 conn = sqlite3.connect(':memory:')
 
 c = conn.cursor()
 
-# Key names -> pode duas palavras?
-# Foreign key: Stock Name
+# Now, we'll create the 
+# Creating companies and stock_values tables
 
 c.execute("""CREATE TABLE companies (
             stock_name text PRIMARY KEY,
@@ -21,11 +25,9 @@ c.execute("""CREATE TABLE stock_values (
             stock_name text,
             date text,
             variable text,
-            value real
+            value real,
+            FOREIGN KEY(stock_name) REFERENCES companies(stock_name)
             )""")
-
-# Is it scalable?
-# Insert new fields -> (2) flexible
  
 # Inserting data into databases
 # Companies DB
@@ -48,9 +50,13 @@ def insert_stock_value(stock_value):
                                                     'variable': stock_value.variable,
                                                     'value': stock_value.value})
 
-## Get data from databases
+# Get data from databases
 ## Companies DB
-#
+
+def get_all_companies():
+    c.execute("SELECT * FROM companies")
+    return c.fetchall()
+
 def get_companies_by_stock_name(stock_name):
     c.execute("SELECT * FROM companies WHERE stock_name=:stock_name", {'stock_name': stock_name})
     return c.fetchall()
@@ -69,6 +75,10 @@ def get_companies_by_currency(currency):
 
 # Values DB
 
+def get_all_stock_values():
+    c.execute("SELECT * FROM stock_values")
+    return c.fetchall()
+
 def get_stock_values_by_stock_name(stock_name):
     c.execute("SELECT * FROM stock_values WHERE stock_name=:stock_name", {'stock_name': stock_name})
     return c.fetchall()
@@ -81,108 +91,77 @@ def get_stock_values_by_variable(variable):
     c.execute("SELECT * FROM stock_values WHERE variable=:variable", {'variable': variable})
     return c.fetchall()
 
-# Update data in databases
-# Companies DB
+def get_all_values_by_stock_name(stock_name):
+    c.execute("SELECT date, value FROM stock_values WHERE stock_name=:stock_name AND variable=:variable", 
+             {'stock_name': stock_name, 'variable': 'ClosePrice'})
+    return c.fetchall()
 
-def update_stock_name_in_companies(company, stock_name):
-    with conn:
-        c.execute("""UPDATE companies SET stock_name = :stock_name
-                    WHERE company_name = :company_name AND exchange = :exchange AND currency = :currency""",
-                  {'stock_name': stock_name, 'company_name': company.company_name,
-                   'exchange': company.exchange, 'currency': company.currency})
+# Ingestion
 
-def update_company_name_in_companies(company, company_name):
-    with conn:
-        c.execute("""UPDATE companies SET company_name = :company_name
-                    WHERE stock_name = :stock_name AND exchange = :exchange AND currency = :currency""",
-                  {'stock_name': company.stock_name, 'company_name': company_name,
-                   'exchange': company.exchange, 'currency': company.currency})
+def populate_stock_values(ticker):
+    data_1 = get_data(ticker)
 
-def update_exchange_in_companies(company, exchange):
-    with conn:
-        c.execute("""UPDATE companies SET exchange = :exchange
-                    WHERE stock_name = :stock_name AND company_name = :company_name AND currency = :currency""",
-                  {'stock_name': company.stock_name, 'company_name': company.company_name,
-                   'exchange': exchange, 'currency': company.currency})
+    for index, row in data_1.iterrows():
+        stock_name = ticker
+        date = index.strftime('%Y-%m-%d')
+        value = row[5]
+        variable = 'Volume'
 
-def update_currency_in_companies(company, currency):
-    with conn:
-        c.execute("""UPDATE companies SET currency = :currency
-                    WHERE stock_name = :stock_name AND company_name = :company_name AND exchange = :exchange""",
-                  {'stock_name': company.stock_name, 'company_name': company.company_name,
-                   'exchange': company.exchange, 'currency': currency})
+        stock_value_volume = StockValue(stock_name, date, variable, value)
+        insert_stock_value(stock_value_volume)
 
-# Update column in Stock Values DB
+        value = row[3]
+        variable = 'ClosePrice'
 
-def update_stock_name_in_stock_values(stock_value, stock_name):
-    with conn:
-        c.execute("""UPDATE stock_values SET stock_name = :stock_name
-                    WHERE date = :date AND variable = :variable AND value = :value""",
-                  {'stock_name': stock_name, 'date': stock_value.date,
-                   'variable': stock_value.variable, 'value': stock_value.value})
+        stock_value_close_price = StockValue(stock_name, date, variable, value)
+        insert_stock_value(stock_value_close_price)
+        
+def populate_companies(ticker):
+    data_2 = yf.Ticker(ticker).info
 
-def update_date_in_stock_values(stock_value, date):
-    with conn:
-        c.execute("""UPDATE stock_values SET date = :date
-                    WHERE stock_name = :stock_name AND exchange = :exchange AND currency = :currency""",
-                  {'stock_name': stock_value.stock_name, 'date': date,
-                   'exchange': stock_value.exchange, 'currency': stock_value.currency})
+    stock_name = ticker
+    company_name = data_2['longName']
+    exchange = data_2['exchange']
+    currency = data_2['financialCurrency']
 
-def update_variable_in_stock_values(stock_value, variable):
-    with conn:
-        c.execute("""UPDATE stock_values SET exchange = :exchange
-                    WHERE stock_name = :stock_name AND company_name = :company_name AND currency = :currency""",
-                  {'stock_name': stock_value.stock_name, 'company_name': stock_value.company_name,
-                   'exchange': variable, 'currency': stock_value.currency})
+    company = Company(stock_name, company_name, exchange, currency)
+    insert_company(company)
 
-def update_value_in_stock_values(stock_value, value):
-    with conn:
-        c.execute("""UPDATE stock_values SET value = :value
-                    WHERE stock_name = :stock_name AND date = :date AND variable = :variable""",
-                  {'stock_name': stock_value.stock_name, 'date': stock_value.date,
-                   'variable': stock_value.variable, 'value': value})
+# We'll use four different companies as examples
 
-comp_1 = Company('PETR4', 'Petróleo Brasileiro SA Petrobras', 'B3', 'BRL')
+tickers = ['PETR4.SA', 'META', 'BBAS3.SA', 'SU.PA']
 
-insert_company(comp_1)
+for ticker in tickers:
+    populate_companies(ticker)
+    populate_stock_values(ticker)
 
-stock_value_1 = StockValue('PETR4', '2022-08-08', 'ClosePrice', 28.89)
-
-insert_stock_value(stock_value_1)
-
-companies = get_companies_by_stock_name('PETR4')
-stock_values = get_stock_values_by_stock_name('PETR4')
+companies = get_all_companies()
+stock_values = get_all_stock_values()
 
 print(companies)
 print(stock_values)
 
-update_currency_in_companies(comp_1, 'USD')
-update_value_in_stock_values(stock_value_1, 100)
+# Ouuff, it works! To be honest, I'm really relieved.
 
-print(companies)
-print(stock_values)
+# Analysis
+# It's a little bit slow, so I'll only make a historical close value Stock Chart for PETR4.SA
 
-## Remove data from databases
-##
-##def remove_emp(emp):""
-##    with conn:
-##        c.execute("DELETE from employees WHERE first = :first AND last = :last",
-##                  {'first': emp.first, 'last': emp.last})
-##
-##
-##emp_1 = Employee('John', 'Doe', 80000)
-##emp_2 = Employee('Jane', 'Doe', 90000)
-##
-##insert_emp(emp_1)
-##insert_emp(emp_2)
-##
-##emps = get_emps_by_name('Doe')
-##print(emps)
-##
-##update_pay(emp_2, 95000)
-##remove_emp(emp_1)
-##
-##emps = get_emps_by_name('Doe')
-##print(emps)
-##
+all_values = get_all_values_by_stock_name('PETR4.SA')
+
+date = []
+close_price_value = []
+
+for tuple in all_values:
+    date.append(tuple[0])
+    close_price_value.append(tuple[1])
+
+plt.plot(date, close_price_value)
+plt.ylabel('Close Price Value')
+plt.xlabel('Date')
+plt.show()
+
+# Such a beautiful plot, right?
+
+# Finally, it's time to end the DB Connection. See you later!
+
 conn.close()
